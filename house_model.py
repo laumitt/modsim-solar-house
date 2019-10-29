@@ -1,4 +1,8 @@
 import matplotlib.pyplot as plt
+import numpy as np
+
+month, day, low, high, low_time, high_time, sun_angle = np.loadtxt('weather.csv', delimiter=',', unpack=True, encoding='utf-8')
+lists = [month, day, low, high, low_time, high_time, sun_angle]
 
 class House:
     def __init__(self):
@@ -13,9 +17,12 @@ class House:
         self.pane_insulation   = 3.4                     # efficiency of pane insulation in retaining heat (R value) (3 (2 pane) - 5(3 pane))
         self.wall_insulation   = 20                      # efficiency of wall insulation in retaining heat (R value) (19-21)
         self.roof_insulation   = 49                      # efficiency of roof insulation in retaining heat (R value) (38-60)
-        # self.concrete_mass     =
-        # self.water_mass        =
         self.thermal_mass      = 400                     # pounds of water
+        self.aux_heat_on       = True                    # is aux. heating on
+        self.thermostat        = 70                      # what the auxiliary heater will heat to
+        self.aux_heat_max      = 40000                   # BTU/hr
+        self.max_temp          = 80                      # ideal max of house temperature
+        self.min_temp          = 60                      # ideal min of house temperature
 
     def update(self, timestep, ambient_temp): # timestep is 1 hour or so
         # heat_transfer in BTU, surface_area in square feet, temps are in F, r_value is square feet * F / BTU
@@ -23,7 +30,11 @@ class House:
         wall_heat_transfer  = (self.wall_surface_area * abs(self.current_temp - ambient_temp))/(self.wall_insulation)
         roof_heat_transfer  = (self.roof_surface_area * abs(self.current_temp - ambient_temp))/(self.roof_insulation)
         total_heat_transfer = -((0.30 * pane_heat_transfer) + (0.40 * wall_heat_transfer) + (0.30 * roof_heat_transfer)) # maybe add floors in future (accounts for 15% but for now all others are up by 5%)
-        self.current_temp   += total_heat_transfer / self.thermal_mass
+        if self.aux_heat_on and (self.thermostat >= self.current_temp):
+            self.used_aux = True
+            aux_heat_energy = self.aux_heat_max * (self.thermostat - self.current_temp) / 60
+            total_heat_transfer += aux_heat_energy
+        self.current_temp += total_heat_transfer / self.thermal_mass
         return self.current_temp
 
 class World:
@@ -51,15 +62,22 @@ if __name__ == '__main__':
     time_log = []
     house_temp_log = []
     world_temp_log = []
-    sim_length = 20 # hours
+    aux_log = []
+    sim_length = len(high) # hours
     for i in range(sim_length):
         house_current_temp = house.update(timestep,world.ambient_temp) # update house temperature
         time_log.append(i)
         house_temp_log.append(house_current_temp)
         world_temp_log.append(world.ambient_temp)
-        print(house_current_temp)
-        world.changeAmbientTemp(world.ambient_temp - i)                # progressively getting colder
-        # note: this is a very inaccurate range for world temperature, as a stand in for now
+        aux_log.append(house.used_aux)
+        print('aux heat used? {}'.format(house.used_aux))
+        if house.current_temp > house.max_temp:
+            print('house is too hot at time {} house temp {}'.format(i, house_current_temp))
+        elif house.current_temp < house.min_temp:
+            print('house is too cold at time {} house temp {}'.format(i, house_current_temp))
+        else:
+            print('house is fine at time {} house temp {}'.format(i, house_current_temp))
+        world.changeAmbientTemp(high[i]) # progressively getting colder for now
 
     # graphing data
     plt.figure(1)
@@ -80,7 +98,6 @@ if __name__ == '__main__':
     # Actual sun heating
         # Thermal mass, sun movement, realistic temperature change
     # Fix ambient temperature equation/changing
-    # Implement aux. heating
     # Harvest Needham weather data
     # Plot more data (configurations)
     # Interpret graphs
