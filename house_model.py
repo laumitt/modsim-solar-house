@@ -11,50 +11,71 @@ class House:
         self.height            = 25                      # feet tall (2 story house)
         self.volume            = self.area * self.height # in cubic feet
         self.current_temp      = 70                      # start out with room temperature in deg F
-        self.pane_surface_area = 0.08 * self.area        # window area as a percent of square footage * square footage = square feet of window panes
+        self.pane_surface_area = 0.08 * self.area        # window area as a percent of square footage * house square footage = square feet of window panes
         self.wall_surface_area = (self.side_length * self.height) - self.pane_surface_area
         self.roof_surface_area = self.area               # assuming roof equivalent to being flat
         self.pane_insulation   = 3.4                     # efficiency of pane insulation in retaining heat (R value) (3 (2 pane) - 5(3 pane))
         self.wall_insulation   = 20                      # efficiency of wall insulation in retaining heat (R value) (19-21)
         self.roof_insulation   = 49                      # efficiency of roof insulation in retaining heat (R value) (38-60)
-        self.thermal_mass      = 400                     # pounds of water
         self.aux_heat_on       = True                    # is aux. heating on
         self.thermostat        = 70                      # what the auxiliary heater will heat to
         self.aux_heat_max      = 40000                   # BTU/hr
         self.max_temp          = 80                      # ideal max of house temperature
         self.min_temp          = 60                      # ideal min of house temperature
+        self.release_rate      = 0.352456079             # rate of release of heat in BTU / ft^2 / deg F
+        self.thermal_mass_temp = self.current_temp       # start thermal mass at same temperature as rest of house
+        self.thermal_mass_area = self.pane_surface_area * 6
+        self.stored_heat       = 0                       # initially thermal mass has no heat stored from sun
+        self.thermal_capacity  = 1000 * 0.23884589662749592
+        # heat capacity in J/kg/K (joules per kilogram per degree Kelvin) converted to BTU/lb/F (BTU per pound per degree F)
+        self.thermal_mass      = (3000 * ((self.thermal_mass_area * 0.5) * 0.092903)) / 2.20462
+        # thermal mass = floor density in kg/m^3 * ((size of window in square feet * 6 * thickness in feet) converted to m^3)) converted to pounds
 
-    def update(self, timestep, ambient_temp): # timestep is 1 hour or so
+    def update(self, timestep, ambient_temp): # timestep is 1 hour
         # heat_transfer in BTU, surface_area in square feet, temps are in F, r_value is square feet * F / BTU
-        pane_heat_transfer  = (self.pane_surface_area * abs(self.current_temp - ambient_temp))/(self.pane_insulation)
-        wall_heat_transfer  = (self.wall_surface_area * abs(self.current_temp - ambient_temp))/(self.wall_insulation)
-        roof_heat_transfer  = (self.roof_surface_area * abs(self.current_temp - ambient_temp))/(self.roof_insulation)
-        total_heat_transfer = -((0.30 * pane_heat_transfer) + (0.40 * wall_heat_transfer) + (0.30 * roof_heat_transfer)) # maybe add floors in future (accounts for 15% but for now all others are up by 5%)
+        pane_heat_transfer = (self.pane_surface_area * (self.current_temp - ambient_temp))/(self.pane_insulation)
+        wall_heat_transfer = (self.wall_surface_area * (self.current_temp - ambient_temp))/(self.wall_insulation)
+        roof_heat_transfer = (self.roof_surface_area * (self.current_temp - ambient_temp))/(self.roof_insulation)
+        total_heat_transfer = -((0.30 * pane_heat_transfer) + (0.40 * wall_heat_transfer) + (0.30 * roof_heat_transfer))
+        # maybe add floor loss in future (accounts for 15% but for now all others are up by 5%)
+
+        if world.is_sun_out == True:
+            insolation = 32 * self.pane_surface_area # BTU available
+        else:
+            insolation = 0
+
+        direct_heat = 0.4 * (insolation/6) # BTU directly heating house
+        total_heat_transfer += direct_heat # direct heat from sun
+
+        captured_heat = 0.6 * (insolation/6) # BTU captured by thermal mass
+        self.stored_heat += captured_heat
+        print('storing ' + str(self.stored_heat) + ' btu')
+
+        total_heat_transfer += self.release_rate * self.stored_heat
+        self.stored_heat -= self.release_rate * self.stored_heat
+
         if self.aux_heat_on and (self.thermostat >= self.current_temp):
             self.used_aux = True
             aux_heat_energy = self.aux_heat_max * (self.thermostat - self.current_temp) / 60
             total_heat_transfer += aux_heat_energy
+        else:
+            self.used_aux = False
         self.current_temp += total_heat_transfer / self.thermal_mass
         return self.current_temp
 
 class World:
     def __init__(self):
-        self.cloudy       = False # is it cloudy today? true/false
-        self.sun_angle    = 45    # angle against the movement of the sun (altitude from horizon) - between 24 deg (jan) and 71 deg (jun)
-        self.sun_position = 90    # angle with the movement of the sun (from east to west) - between 0 deg (sunrise), 180 deg (sunset), 359 deg (before sunrise)
-        self.ambient_temp = 60    # deg. fahrenheit - between 30 deg (jan) and 74 deg (july)
+        self.is_sun_out   = True  # is the sun out
+        self.ambient_temp = 60    # deg. fahrenheit
 
     # various update functions so the world can change over the course of a day
-    def flipCloudy(self):
-        self.cloudy = (not self.cloudy)
-    def changeSunAngle(self, new_angle):
-        self.sun_angle = new_angle
-    def changeSunPosition(self, new_position):
-        self.sun_position = new_position
+    def flipSun(self):
+        self.is_sun_out = (not self.is_sun_out)
     def changeAmbientTemp(self, new_temp):
         self.ambient_temp = new_temp
 
 if __name__ == '__main__':
+    print('OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO')
     # running model once = simulating one day
     house = House()
     world = World()
@@ -63,8 +84,22 @@ if __name__ == '__main__':
     house_temp_log = []
     world_temp_log = []
     aux_log = []
-    sim_length = len(high) # hours
+    sim_length = len(day) * 1 * 24 # converting days to hours
+    day = 0
+    half_days = 0
+    print(sim_length)
     for i in range(sim_length):
+        if i % 12 == 0: # if it's halfway through a day
+            if half_days % 2 == 0:
+                world.changeAmbientTemp(high[day])
+                print('changed ambient temp to {}'.format(high[day]))
+                half_days += 1
+                world.is_sun_out = True
+            elif half_days % 2 == 1:
+                world.changeAmbientTemp(low[day])
+                print('changed ambient temp to {}'.format(low[day]))
+                half_days += 1
+                world.is_sun_out = False
         house_current_temp = house.update(timestep,world.ambient_temp) # update house temperature
         time_log.append(i)
         house_temp_log.append(house_current_temp)
@@ -72,18 +107,22 @@ if __name__ == '__main__':
         aux_log.append(house.used_aux)
         print('aux heat used? {}'.format(house.used_aux))
         if house.current_temp > house.max_temp:
-            print('house is too hot at time {} house temp {}'.format(i, house_current_temp))
+            print('house is too hot at day {} and time {} house temp {}'.format(day, i, house_current_temp))
         elif house.current_temp < house.min_temp:
-            print('house is too cold at time {} house temp {}'.format(i, house_current_temp))
+            print('house is too cold at day {} and time {} house temp {}'.format(day, i, house_current_temp))
         else:
-            print('house is fine at time {} house temp {}'.format(i, house_current_temp))
-        world.changeAmbientTemp(high[i]) # progressively getting colder for now
+            print('house is fine at day {} and time {} house temp {}'.format(day, i, house_current_temp))
+        print('-------------------------------------------------------------------')
+        if i % (1 * 24) == 0 and i != 0: # i is not 0 is very important to get things to line up properly
+            day += 1
 
     # graphing data
+    for x in time_log:
+        time_log[x] = time_log[x] / (1 * 24)
     plt.figure(1)
-    plt.plot(time_log, house_temp_log, '--', label='House Temperature')
-    plt.plot(time_log, world_temp_log, '--', label='World Temperature')
-    plt.xlabel('Time (hrs)')
+    plt.plot(time_log, house_temp_log, '-', label='House Temperature')
+    plt.plot(time_log, world_temp_log, '-', label='World Temperature')
+    plt.xlabel('Time (days)')
     plt.ylabel('Degrees (F)')
     plt.legend()
     plt.show()
@@ -93,11 +132,11 @@ if __name__ == '__main__':
     # Roof is mathematically flat (see above)
     # No auxiliary heating system (yet)
     # Windows are double-paned (triple-paned is expensive)
+    # some Wacky stuff going on re: heating efficiency
 
 # Things to Implement
     # Actual sun heating
         # Thermal mass, sun movement, realistic temperature change
     # Fix ambient temperature equation/changing
-    # Harvest Needham weather data
     # Plot more data (configurations)
     # Interpret graphs
