@@ -1,8 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-month, day, low, high, low_time, high_time, sun_angle = np.loadtxt('weather.csv', delimiter=',', unpack=True, encoding='utf-8')
-lists = [month, day, low, high, low_time, high_time, sun_angle]
+month, week, low, high, low_time, high_time, sun_angle = np.loadtxt('weather.csv', delimiter=',', unpack=True, encoding='utf-8')
+lists = [month, week, low, high, low_time, high_time, sun_angle]
 
 class House:
     def __init__(self):
@@ -75,7 +75,6 @@ class World:
         self.ambient_temp = new_temp
 
 if __name__ == '__main__':
-    print('OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO')
     # running model once = simulating one day
     house = House()
     world = World()
@@ -84,20 +83,21 @@ if __name__ == '__main__':
     house_temp_log = []
     world_temp_log = []
     aux_log = []
-    sim_length = len(day) * 1 * 24 # converting days to hours
-    day = 0
+    sim_length = len(week) * 7 * 24 # converting days to hours
+    week_num = 0
+    day_num = 0
     half_days = 0
-    print(sim_length)
+    days_with_aux = 0
     for i in range(sim_length):
         if i % 12 == 0: # if it's halfway through a day
             if half_days % 2 == 0:
-                world.changeAmbientTemp(high[day])
-                print('changed ambient temp to {}'.format(high[day]))
+                world.changeAmbientTemp(high[week_num])
+                print('changed ambient temp to {}'.format(high[week_num]))
                 half_days += 1
                 world.is_sun_out = True
             elif half_days % 2 == 1:
-                world.changeAmbientTemp(low[day])
-                print('changed ambient temp to {}'.format(low[day]))
+                world.changeAmbientTemp(low[week_num])
+                print('changed ambient temp to {}'.format(low[week_num]))
                 half_days += 1
                 world.is_sun_out = False
         house_current_temp = house.update(timestep,world.ambient_temp) # update house temperature
@@ -106,22 +106,29 @@ if __name__ == '__main__':
         world_temp_log.append(world.ambient_temp)
         aux_log.append(house.used_aux)
         print('aux heat used? {}'.format(house.used_aux))
+        if house.used_aux == True:
+            days_with_aux += 1
         if house.current_temp > house.max_temp:
-            print('house is too hot at day {} and time {} house temp {}'.format(day, i, house_current_temp))
+            print('house is too hot at week {} day {} and time {} house temp {}'.format(week_num, day_num, i, house_current_temp))
         elif house.current_temp < house.min_temp:
-            print('house is too cold at day {} and time {} house temp {}'.format(day, i, house_current_temp))
+            print('house is too cold at week {} day {} and time {} house temp {}'.format(week_num, day_num, i, house_current_temp))
         else:
-            print('house is fine at day {} and time {} house temp {}'.format(day, i, house_current_temp))
-        print('-------------------------------------------------------------------')
-        if i % (1 * 24) == 0 and i != 0: # i is not 0 is very important to get things to line up properly
-            day += 1
+            print('house is fine at week {} day {} and time {} house temp {}'.format(week_num, day_num, i, house_current_temp))
+        if i % 24 == 0 and i != 0: # i is not 0 is very important to get things to line up properly
+            day_num += 1
+        if day_num % 7 == 0 and day_num != 0: # i is not 0 is very important to get things to line up properly
+            week_num += 1
+            day_num = 0
 
     # graphing data
+    print('used aux heat {} days out of {}'.format(days_with_aux/24, i/24))
     for x in time_log:
-        time_log[x] = time_log[x] / (1 * 24)
+        time_log[x] = time_log[x] / (7 * 24)
+
     plt.figure(1)
-    plt.plot(time_log, house_temp_log, '-', label='House Temperature')
     plt.plot(time_log, world_temp_log, '-', label='World Temperature')
+    plt.plot(time_log, house_temp_log, '-', label='House Temperature')
+    plt.plot(time_log, aux_log, '--', label='Days with Auxiliary Heat')
     plt.xlabel('Time (days)')
     plt.ylabel('Degrees (F)')
     plt.legend()
@@ -135,8 +142,5 @@ if __name__ == '__main__':
     # some Wacky stuff going on re: heating efficiency
 
 # Things to Implement
-    # Actual sun heating
-        # Thermal mass, sun movement, realistic temperature change
-    # Fix ambient temperature equation/changing
     # Plot more data (configurations)
     # Interpret graphs
